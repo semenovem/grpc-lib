@@ -1,0 +1,141 @@
+plugins {
+    id 'java-library'
+    id 'com.google.protobuf' version '0.8.12'
+}
+
+repositories {
+    jcenter()
+}
+
+def String grpcVersion = '1.28.1'
+def String protobufVersion = '3.11.4'
+def String protocVersion = protobufVersion
+
+/**
+ *
+ */
+def String pathTargetJava = "${projectDir}/src/main/java/generated"
+
+/**
+ * директория, куда генерируются proto
+ */
+def String pathGeneratedGrpcFiles = "${project.buildDir}/generated/source/proto"
+
+version = '0.0.0'
+
+defaultTasks 'clean', 'build'
+
+dependencies {
+    implementation "com.google.protobuf:protobuf-java:${protobufVersion}"
+    implementation "io.grpc:grpc-netty:${grpcVersion}"
+    implementation "io.grpc:grpc-netty-shaded:${grpcVersion}"
+    implementation "io.grpc:grpc-protobuf:${grpcVersion}"
+    implementation "io.grpc:grpc-stub:${grpcVersion}"
+
+    runtimeOnly "io.grpc:grpc-netty-shaded:${grpcVersion}"
+
+    testImplementation "io.grpc:grpc-testing:${grpcVersion}"
+    testImplementation "org.junit.jupiter:junit-jupiter-api:5.6.2"
+    testImplementation "org.mockito:mockito-core:3.3.3"
+
+    testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:5.6.2"
+    testRuntimeOnly "org.junit.vintage:junit-vintage-engine:5.6.2"
+}
+
+jar {
+    manifest {
+        attributes(
+            'Implementation-Title': project.name,
+            'Implementation-Version': project.version
+        )
+    }
+
+    from sourceSets.main.output
+    dependsOn configurations.runtimeClasspath
+    from {
+        configurations.runtimeClasspath.findAll { it.name.endsWith('jar') }.collect { zipTree(it) }
+    }
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src/main/java', 'src/main/java/generated']
+        }
+    }
+
+    test {
+        java {
+            srcDirs = ['src/test/java']
+        }
+    }
+}
+
+protobuf {
+    generatedFilesBaseDir = pathGeneratedGrpcFiles
+    protoc {
+        artifact = "com.google.protobuf:protoc:${protocVersion}"
+    }
+    plugins {
+        grpc {
+            artifact = 'io.grpc:protoc-gen-grpc-java:1.28.0'
+        }
+    }
+    generateProtoTasks {
+        all()*.plugins {
+            grpc {}
+        }
+    }
+}
+
+task copyProtobuf(type: Copy, description: "Copies java class proto file") {
+    from "${pathGeneratedGrpcFiles}/main/grpc"
+    from "${pathGeneratedGrpcFiles}/main/java"
+    into pathTargetJava
+
+    dependsOn('cleanDirBeforeTargetJava')
+    finalizedBy(['cleanGeneratedGrpcFiles'])
+}
+
+task cleanDirBeforeTargetJava(type: Delete) {
+    delete pathTargetJava
+}
+
+task cleanGeneratedGrpcFiles(type: Delete) {
+    delete pathGeneratedGrpcFiles
+}
+
+
+tasks.all {
+    if (name == "generateProto") {
+        finalizedBy(['copyProtobuf'])
+    }
+}
+
+
+
+compileJava {
+    dependsOn(['cleanGeneratedGrpcFiles'])
+}
+
+
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+    }
+    //
+    testLogging.showStandardStreams(true)
+}
+
+
+/**
+ * последовательный вывод названий тасков
+ * полезно для дебага
+ */
+//gradle.taskGraph.beforeTask { task ->
+//    println(task.name)
+//}
+
+
